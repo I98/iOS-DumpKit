@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
-from ios_dumpkit.analysis import write_objc_runtime_artifacts, write_static_analysis_artifacts
+from ios_dumpkit.analysis import (
+    _run_optional_tool,
+    write_objc_runtime_artifacts,
+    write_static_analysis_artifacts,
+)
 
 
 def test_static_analysis_artifacts_are_written(app_bundle: Path, tmp_path: Path) -> None:
@@ -40,3 +45,20 @@ def test_objc_runtime_headers_are_written(tmp_path: Path) -> None:
         "@interface ExampleViewController : UIViewController <UITableViewDelegate>"
         in header.read_text(encoding="utf-8")
     )
+
+
+def test_failed_optional_tool_does_not_write_error_file(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "bad.disasm.txt"
+
+    monkeypatch.setattr("ios_dumpkit.analysis.shutil.which", lambda _tool: "/usr/bin/tool")
+    monkeypatch.setattr(
+        "ios_dumpkit.analysis.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: Missing bin header addrline",
+        ),
+    )
+
+    assert not _run_optional_tool(["rabin2", "-d", "binary"], destination)
+    assert not destination.exists()

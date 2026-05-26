@@ -313,6 +313,25 @@ function ownProperties(object, propertyName) {
   }
 }
 
+function readCStringPointer(ptrValue) {
+  if (!ptrValue || ptrValue.isNull()) {
+    return null;
+  }
+  try {
+    return ptrValue.readUtf8String();
+  } catch (_) {
+    return null;
+  }
+}
+
+function basename(path) {
+  if (!path) {
+    return null;
+  }
+  var parts = path.split('/');
+  return parts[parts.length - 1];
+}
+
 function classSchema(className) {
   var cls = ObjC.classes[className];
   var superclass = null;
@@ -334,13 +353,151 @@ function classSchema(className) {
   };
 }
 
-function enumerateObjCClasses(moduleNames) {
-  if (!tryLoadObjC()) {
+function methodSchemasNative(cls, prefix) {
+  var classCopyMethodList = native('class_copyMethodList', 'pointer', ['pointer', 'pointer']);
+  var methodGetName = native('method_getName', 'pointer', ['pointer']);
+  var selGetName = native('sel_getName', 'pointer', ['pointer']);
+  var freeFn = native('free', 'void', ['pointer']);
+  var countPtr = Memory.alloc(4);
+  countPtr.writeU32(0);
+  var list = classCopyMethodList(cls, countPtr);
+  if (list.isNull()) {
+    return [];
+  }
+  var methods = [];
+  var count = countPtr.readU32();
+  for (var i = 0; i < count; i++) {
+    var method = list.add(i * Process.pointerSize).readPointer();
+    var selector = methodGetName(method);
+    var name = readCStringPointer(selGetName(selector));
+    if (name) {
+      methods.push(prefix + ' ' + name);
+    }
+  }
+  freeFn(list);
+  return methods;
+}
+
+function protocolSchemasNative(cls) {
+  var classCopyProtocolListPtr = findExport('class_copyProtocolList');
+  var protocolGetNamePtr = findExport('protocol_getName');
+  if (!classCopyProtocolListPtr || !protocolGetNamePtr) {
+    return [];
+  }
+  var classCopyProtocolList = native('class_copyProtocolList', 'pointer', ['pointer', 'pointer']);
+  var protocolGetName = native('protocol_getName', 'pointer', ['pointer']);
+  var freeFn = native('free', 'void', ['pointer']);
+  var countPtr = Memory.alloc(4);
+  countPtr.writeU32(0);
+  var list = classCopyProtocolList(cls, countPtr);
+  if (list.isNull()) {
+    return [];
+  }
+  var protocols = [];
+  var count = countPtr.readU32();
+  for (var i = 0; i < count; i++) {
+    var proto = list.add(i * Process.pointerSize).readPointer();
+    var name = readCStringPointer(protocolGetName(proto));
+    if (name) {
+      protocols.push(name);
+    }
+  }
+  freeFn(list);
+  return protocols;
+}
+
+function classImagePathNative(cls) {
+  var dladdrPtr = findExport('dladdr');
+  if (!dladdrPtr) {
+    return null;
+  }
+  var dladdr = native('dladdr', 'int', ['pointer', 'pointer']);
+  var info = Memory.alloc(Process.pointerSize * 4);
+  if (dladdr(cls, info) === 0) {
+    return null;
+  }
+  return readCStringPointer(info.readPointer());
+}
+
+function enumerateObjCClassesNative(moduleNames) {
+  var objcGetClassListPtr = findExport('objc_getClassList');
+  if (!objcGetClassListPtr) {
     return {
       available: false,
-      reason: 'Objective-C runtime is unavailable.',
+      reason: 'Objective-C runtime APIs are unavailable.',
       classes: []
     };
+  }
+
+  var moduleFilter = {};
+  var hasFilter = false;
+  if (moduleNames) {
+    for (var i = 0; i < moduleNames.length; i++) {
+      moduleFilter[moduleNames[i]] = true;
+      hasFilter = true;
+    }
+  }
+
+  var objcGetClassList = native('objc_getClassList', 'int', ['pointer', 'int']);
+  var classGetName = native('class_getName', 'pointer', ['pointer']);
+  var classGetSuperclass = native('class_getSuperclass', 'pointer', ['pointer']);
+  var objectGetClass = native('object_getClass', 'pointer', ['pointer']);
+  var count = objcGetClassList(NULL, 0);
+  if (count <= 0) {
+    return { available: true, source: 'objc-runtime-c', classes: [] };
+  }
+
+  var list = Memory.alloc(count * Process.pointerSize);
+  var actual = objcGetClassList(list, count);
+  var classes = [];
+  var maxClasses = 20000;
+  for (var i = 0; i < actual; i++) {
+    var cls = list.add(i * Process.pointerSize).readPointer();
+    var className = readCStringPointer(classGetName(cls));
+    if (!className) {
+      continue;
+    }
+
+    var imagePath = classImagePathNative(cls);
+    var moduleName = basename(imagePath);
+    if (hasFilter && moduleFilter[moduleName] !== true && moduleFilter[imagePath] !== true) {
+      continue;
+    }
+
+    var superclass = classGetSuperclass(cls);
+    var superclassName = superclass.isNull() ? null : readCStringPointer(classGetName(superclass));
+    var methods = methodSchemasNative(cls, '-');
+    var metaclass = objectGetClass(cls);
+    if (!metaclass.isNull()) {
+      methods = methods.concat(methodSchemasNative(metaclass, '+'));
+    }
+    classes.push({
+      name: className,
+      superclass: superclassName,
+      moduleName: moduleName,
+      imagePath: imagePath,
+      protocols: protocolSchemasNative(cls),
+      methods: methods
+    });
+    if (classes.length >= maxClasses) {
+      break;
+    }
+  }
+
+  classes.sort(function (a, b) {
+    return a.name.localeCompare(b.name);
+  });
+  return {
+    available: true,
+    source: 'objc-runtime-c',
+    truncated: classes.length >= maxClasses,
+    classes: classes
+  };
+}
+
+function enumerateObjCClasses(moduleNames) {
+  if (!tryLoadObjC()) {
+    return enumerateObjCClassesNative(moduleNames);
   }
 
   var moduleFilter = {};

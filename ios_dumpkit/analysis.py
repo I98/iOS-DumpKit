@@ -80,6 +80,8 @@ def _analysis_to_json(analysis: MachOAnalysis) -> dict[str, Any]:
 def _run_optional_tool(command: list[str], output_path: Path, timeout: float = 30.0) -> bool:
     if not shutil.which(command[0]):
         return False
+    if output_path.exists():
+        output_path.unlink()
     try:
         result = subprocess.run(
             command,
@@ -90,12 +92,14 @@ def _run_optional_tool(command: list[str], output_path: Path, timeout: float = 3
         )
     except Exception:
         return False
-    output = result.stdout
-    if result.stderr:
-        output += "\n[stderr]\n" + result.stderr
+    if result.returncode != 0:
+        return False
+    output = result.stdout.strip()
     if not output.strip():
         return False
-    output_path.write_text(output, encoding="utf-8", errors="replace")
+    if "ERROR: Missing bin header" in output:
+        return False
+    output_path.write_text(output + "\n", encoding="utf-8", errors="replace")
     return True
 
 
