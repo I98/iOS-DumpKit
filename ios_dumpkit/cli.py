@@ -217,6 +217,16 @@ def dump(
     include_app_groups: Annotated[
         bool, typer.Option("--include-app-groups", help="Copy app-group containers when exposed.")
     ] = False,
+    analysis_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--analysis-artifacts",
+            help=(
+                "Write readable analysis artifacts such as ObjC headers, strings, "
+                "symbols, and Mach-O summaries."
+            ),
+        ),
+    ] = False,
     metadata_only: Annotated[
         bool, typer.Option("--metadata-only", help="Extract metadata without packaging IPA.")
     ] = False,
@@ -251,6 +261,7 @@ def dump(
         include_extensions=include_extensions,
         include_frameworks=include_frameworks,
         include_app_groups=include_app_groups,
+        analysis_artifacts=analysis_artifacts,
         metadata_only=metadata_only,
         no_launch=no_launch,
         attach_pid=attach_pid,
@@ -299,6 +310,16 @@ def metadata(
     output_dir: Annotated[Path, typer.Option("--output-dir", help="Output directory.")] = Path(
         "dumps"
     ),
+    analysis_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--analysis-artifacts",
+            help=(
+                "Write readable analysis artifacts such as ObjC headers, strings, "
+                "symbols, and Mach-O summaries."
+            ),
+        ),
+    ] = False,
     no_launch: Annotated[
         bool, typer.Option("--no-launch", help="Attach only; do not launch app.")
     ] = False,
@@ -324,6 +345,7 @@ def metadata(
     options = DumpOptions(
         output_dir=output_dir,
         metadata_only=True,
+        analysis_artifacts=analysis_artifacts,
         no_launch=no_launch,
         attach_pid=attach_pid,
         timeout=timeout,

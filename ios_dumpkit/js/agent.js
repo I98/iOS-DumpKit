@@ -299,6 +299,88 @@ function enumerateAppModules() {
     });
 }
 
+function ownProperties(object, propertyName) {
+  try {
+    var value = object[propertyName];
+    if (!value) {
+      return [];
+    }
+    return value.map(function (item) {
+      return item.toString();
+    });
+  } catch (_) {
+    return [];
+  }
+}
+
+function classSchema(className) {
+  var cls = ObjC.classes[className];
+  var superclass = null;
+  try {
+    superclass = cls.$superClass ? cls.$superClass.$className : null;
+  } catch (_) {}
+
+  var moduleName = null;
+  try {
+    moduleName = cls.$moduleName ? cls.$moduleName.toString() : null;
+  } catch (_) {}
+
+  return {
+    name: className,
+    superclass: superclass,
+    moduleName: moduleName,
+    protocols: ownProperties(cls, '$protocols'),
+    methods: ownProperties(cls, '$ownMethods')
+  };
+}
+
+function enumerateObjCClasses(moduleNames) {
+  if (!tryLoadObjC()) {
+    return {
+      available: false,
+      reason: 'Objective-C runtime is unavailable.',
+      classes: []
+    };
+  }
+
+  var moduleFilter = {};
+  var hasFilter = false;
+  if (moduleNames) {
+    for (var i = 0; i < moduleNames.length; i++) {
+      moduleFilter[moduleNames[i]] = true;
+      hasFilter = true;
+    }
+  }
+
+  var names = Object.keys(ObjC.classes).sort();
+  var classes = [];
+  var maxClasses = 20000;
+  for (var j = 0; j < names.length; j++) {
+    var payload;
+    try {
+      payload = classSchema(names[j]);
+    } catch (_) {
+      continue;
+    }
+    if (hasFilter && payload.moduleName && moduleFilter[payload.moduleName] !== true) {
+      continue;
+    }
+    if (hasFilter && !payload.moduleName) {
+      continue;
+    }
+    classes.push(payload);
+    if (classes.length >= maxClasses) {
+      break;
+    }
+  }
+
+  return {
+    available: true,
+    truncated: classes.length >= maxClasses,
+    classes: classes
+  };
+}
+
 function ensureDir(path) {
   if (!path || path === '/') {
     return true;
@@ -612,6 +694,7 @@ function removePath(path) {
 rpc.exports = {
   getbundleinfo: getBundleInfo,
   enumeratemodules: enumerateAppModules,
+  enumerateobjcclasses: enumerateObjCClasses,
   dumpmodule: dumpModule,
   getgroupcontainers: getGroupContainers,
   statpath: statPath,

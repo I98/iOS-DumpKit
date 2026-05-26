@@ -52,6 +52,7 @@ class DumpOptions:
     include_extensions: bool = True
     include_frameworks: bool = True
     include_app_groups: bool = False
+    analysis_artifacts: bool = False
     metadata_only: bool = False
     no_launch: bool = False
     attach_pid: int | None = None

@@ -45,6 +45,14 @@ ios-dumpkit dump com.example.app \
 ios-dumpkit metadata com.example.app --usb --output-dir ./metadata
 ```
 
+## Write Analysis Artifacts
+
+```bash
+ios-dumpkit dump com.example.app --usb --analysis-artifacts --output-dir ./dumps
+```
+
+This writes reconstructed Objective-C headers, strings, Mach-O summaries, symbols, and optional disassembly under `./dumps/com.example.app-analysis/`.
+
 ## Attach To Existing PID
 
 ```bash
@@ -62,4 +70,3 @@ ios-dumpkit verify ./dumps/Example.ipa
 ```bash
 ios-dumpkit dump com.example.app --usb --trace trace.jsonl --verbose
 ```
-

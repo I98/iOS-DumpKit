@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TransferSpeedColumn
 
+from .analysis import write_objc_runtime_artifacts, write_static_analysis_artifacts
 from .app_resolver import AppResolver
 from .config import ConnectionConfig, DumpOptions, SshConfig
 from .device import AppInfo, BundleInfo, ModuleInfo, bundle_info_from_agent
@@ -165,6 +166,24 @@ class IOSDumper:
             metadata_dir = options.output_dir / f"{app.identifier}-metadata"
             with stage(log, "extracting metadata"):
                 metadata = write_metadata(local_bundle, metadata_dir)
+
+            if options.analysis_artifacts:
+                with stage(log, "writing analysis artifacts"):
+                    analysis_dir = options.output_dir / f"{app.identifier}-analysis"
+                    write_static_analysis_artifacts(local_bundle, analysis_dir)
+                    module_names = sorted(
+                        {module.name for module in modules if module.is_app_module and module.name}
+                    )
+                    objc_payload = dict(
+                        rpc.call(
+                            "enumerateobjcclasses",
+                            module_names,
+                            timeout=options.timeout,
+                            retry=options.retry,
+                        )
+                    )
+                    class_count = write_objc_runtime_artifacts(objc_payload, analysis_dir)
+                    log.info("Objective-C runtime headers written: %d", class_count)
 
             if options.include_app_groups and metadata.app_groups:
                 with stage(log, "copying app groups"):

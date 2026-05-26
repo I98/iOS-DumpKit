@@ -22,6 +22,7 @@ It is designed as a cleaner, maintained replacement for older `frida-ios-dump` s
 - IPA creation with Python `zipfile`, not shell `zip`
 - IPA verification for `Payload/*.app`, `Info.plist`, executable permissions, and remaining encrypted Mach-O files
 - Metadata export including entitlements, URL schemes, ATS, associated domains, app groups, and dylib imports/exports
+- Optional readable analysis artifacts: Objective-C runtime headers, strings, symbols, Mach-O summaries, and best-effort disassembly
 - Trace logging with `--trace`
 
 ## Status
@@ -228,6 +229,7 @@ Common flags:
 --include-extensions / --no-include-extensions
 --include-frameworks / --no-include-frameworks
 --include-app-groups
+--analysis-artifacts
 --metadata-only
 --no-launch
 --attach-pid <pid>
@@ -245,6 +247,7 @@ Examples:
 
 ```bash
 ios-dumpkit dump com.example.app --usb --main-only
+ios-dumpkit dump com.example.app --usb --analysis-artifacts --output-dir ./dumps
 ios-dumpkit dump com.example.app --usb --metadata-only --output-dir ./metadata
 ios-dumpkit dump com.example.app --usb --no-launch --attach-pid 1234
 ios-dumpkit dump com.example.app --usb --timeout 120 --retry 2 --trace trace.jsonl
@@ -271,6 +274,37 @@ The `dump` and `metadata` commands create a metadata directory containing:
 - Associated domains
 - App groups
 - Imported and exported dylibs
+
+## Analysis Artifacts
+
+Use `--analysis-artifacts` to write readable reverse-engineering artifacts into the output directory:
+
+```bash
+ios-dumpkit dump com.example.app --usb --analysis-artifacts --output-dir ./dumps
+```
+
+The tool creates:
+
+```text
+dumps/
+  com.example.app-analysis/
+    analysis/
+      manifest.json
+      objc/
+        objc_classes.json
+        headers/
+          ExampleClass.h
+      macho/
+        Example.macho.json
+      strings/
+        Example.strings.txt
+      symbols/
+        Example.symbols.txt
+      disassembly/
+        Example.disasm.txt
+```
+
+These are not original source files. Objective-C headers are reconstructed from runtime metadata. Swift and C/C++ code generally cannot be recovered as clean source; the tool exports available symbols, strings, Mach-O metadata, and optional disassembly when local tools such as `llvm-nm`, `llvm-objdump`, or `rabin2` are installed.
 
 ## IPA Output
 
