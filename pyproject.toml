@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ios-dumpkit-ng"
+version = "0.1.0"
+description = "Modern Frida-based iOS app dump/decryption toolkit for authorised security testing."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ios-dumpkit-ng contributors" }]
+keywords = ["ios", "frida", "mobile-security", "ipa", "jailbreak"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = [
+  "frida>=17",
+  "frida-tools>=14",
+  "packaging>=24",
+  "paramiko>=3.4",
+  "rich>=13.7",
+  "scp>=0.15",
+  "typer>=0.17",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.0",
+  "pytest>=8.0",
+  "pytest-mock>=3.14",
+  "ruff>=0.8",
+]
+
+[project.scripts]
+ios-dumpkit = "ios_dumpkit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ios_dumpkit"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B904"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["ios_dumpkit/tests"]
