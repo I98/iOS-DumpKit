@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import plistlib
 import zipfile
 from pathlib import Path
 
@@ -41,3 +42,21 @@ def test_verifier_reports_missing_payload(tmp_path: Path) -> None:
 
     assert not result.valid
     assert any("Payload" in error for error in result.errors)
+
+
+def test_verifier_rejects_non_macho_main_executable(tmp_path: Path) -> None:
+    bad = tmp_path / "bad-main.ipa"
+    info = plistlib.dumps(
+        {
+            "CFBundleIdentifier": "com.example.bad",
+            "CFBundleExecutable": "Bad",
+        }
+    )
+    with zipfile.ZipFile(bad, "w") as zf:
+        zf.writestr("Payload/Bad.app/Info.plist", info)
+        zf.writestr("Payload/Bad.app/Bad", b"not a macho")
+
+    result = verify_ipa(bad)
+
+    assert not result.valid
+    assert any("Main executable is not a Mach-O" in error for error in result.errors)

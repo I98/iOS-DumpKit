@@ -338,6 +338,74 @@ function copyFileSlice(inputPath, outputPath, offset, size) {
   input.close();
 }
 
+function getFileSize(path) {
+  var file = new File(path, 'rb');
+  file.seek(0, File.SEEK_END);
+  var size = file.tell();
+  file.close();
+  return size;
+}
+
+function readFilePrefix(path, size) {
+  var file = new File(path, 'rb');
+  var data = file.readBytes(size);
+  file.close();
+  return new Uint8Array(data);
+}
+
+function readU32BE(bytes, offset) {
+  return (
+    (bytes[offset] * 0x1000000) +
+    (bytes[offset + 1] << 16) +
+    (bytes[offset + 2] << 8) +
+    bytes[offset + 3]
+  ) >>> 0;
+}
+
+function readU64BE(bytes, offset) {
+  var high = readU32BE(bytes, offset);
+  var low = readU32BE(bytes, offset + 4);
+  return high * 0x100000000 + low;
+}
+
+function resolveFileSlice(module, fileSize) {
+  var header = readFilePrefix(module.path, Math.min(fileSize, 4096));
+  if (header.length < 4) {
+    throw new Error('Original module file is too small: ' + module.path);
+  }
+
+  var magic = readU32BE(header, 0);
+  if (magic !== 0xcafebabe && magic !== 0xcafebabf) {
+    return { offset: 0, size: fileSize, fat: false };
+  }
+
+  var is64 = magic === 0xcafebabf;
+  var nfatArch = readU32BE(header, 4);
+  var entrySize = is64 ? 32 : 20;
+  var tableSize = 8 + nfatArch * entrySize;
+  if (header.length < tableSize) {
+    header = readFilePrefix(module.path, tableSize);
+  }
+
+  var currentCpuType = module.base.add(4).readU32();
+  var currentCpuSubtype = module.base.add(8).readU32() & 0x00ffffff;
+  for (var i = 0; i < nfatArch; i++) {
+    var entry = 8 + i * entrySize;
+    var cpuType = readU32BE(header, entry);
+    var cpuSubtype = readU32BE(header, entry + 4) & 0x00ffffff;
+    var sliceOffset = is64 ? readU64BE(header, entry + 8) : readU32BE(header, entry + 8);
+    var sliceSize = is64 ? readU64BE(header, entry + 16) : readU32BE(header, entry + 12);
+    if (cpuType === currentCpuType && cpuSubtype === currentCpuSubtype) {
+      if (sliceOffset + sliceSize > fileSize) {
+        throw new Error('Fat Mach-O slice exceeds file bounds for ' + module.path);
+      }
+      return { offset: sliceOffset, size: sliceSize, fat: true };
+    }
+  }
+
+  throw new Error('Unable to find matching fat Mach-O slice for ' + module.path);
+}
+
 function findModuleByPath(path) {
   var modules = enumerateModulesCompat();
   for (var i = 0; i < modules.length; i++) {
@@ -358,7 +426,9 @@ function dumpModule(modulePath, outPath) {
     throw new Error('Module is not a supported Mach-O image: ' + modulePath);
   }
 
-  copyFileSlice(module.path, outPath, 0, module.size);
+  var fileSize = getFileSize(module.path);
+  var fileSlice = resolveFileSlice(module, fileSize);
+  copyFileSlice(module.path, outPath, 0, fileSize);
 
   if (parsed.encryption && parsed.encryption.cryptsize > 0) {
     var out = new File(outPath, 'r+b');
@@ -368,12 +438,12 @@ function dumpModule(modulePath, outPath) {
     while (remaining > 0) {
       var readSize = Math.min(chunkSize, remaining);
       var data = module.base.add(offset).readByteArray(readSize);
-      out.seek(offset, File.SEEK_SET);
+      out.seek(fileSlice.offset + offset, File.SEEK_SET);
       out.write(data);
       offset += readSize;
       remaining -= readSize;
     }
-    out.seek(parsed.encryption.cryptidFileOffset, File.SEEK_SET);
+    out.seek(fileSlice.offset + parsed.encryption.cryptidFileOffset, File.SEEK_SET);
     out.write(new Uint8Array([0, 0, 0, 0]).buffer);
     out.flush();
     out.close();
@@ -384,7 +454,9 @@ function dumpModule(modulePath, outPath) {
     outPath: outPath,
     originalPath: module.path,
     name: module.name,
-    size: module.size,
+    size: fileSize,
+    sliceOffset: fileSlice.offset,
+    fat: fileSlice.fat,
     encryption: parsed.encryption
   };
 }

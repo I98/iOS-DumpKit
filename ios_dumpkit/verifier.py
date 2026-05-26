@@ -33,6 +33,7 @@ def verify_ipa(path: Path) -> VerificationResult:
     warnings: list[str] = []
     encrypted: list[str] = []
     app_bundle: str | None = None
+    main_executable_name: str | None = None
 
     if not path.exists():
         return VerificationResult(valid=False, errors=[f"File does not exist: {path}"])
@@ -69,11 +70,11 @@ def verify_ipa(path: Path) -> VerificationResult:
                         info = {}
                     executable = info.get("CFBundleExecutable") if isinstance(info, dict) else None
                     if executable:
-                        executable_name = f"{app_bundle}/{executable}"
-                        if executable_name not in names:
-                            errors.append(f"Missing main executable: {executable_name}")
+                        main_executable_name = f"{app_bundle}/{executable}"
+                        if main_executable_name not in names:
+                            errors.append(f"Missing main executable: {main_executable_name}")
                         else:
-                            mode = _zip_mode(zip_handle.getinfo(executable_name))
+                            mode = _zip_mode(zip_handle.getinfo(main_executable_name))
                             if not mode & stat.S_IXUSR:
                                 warnings.append(
                                     "Main executable is not marked executable in ZIP metadata."
@@ -91,12 +92,20 @@ def verify_ipa(path: Path) -> VerificationResult:
                     b"\xca\xfe\xba\xbe",
                     b"\xca\xfe\xba\xbf",
                 }:
+                    if name == main_executable_name:
+                        errors.append(f"Main executable is not a Mach-O file: {name}")
                     continue
                 try:
                     analysis = parse_macho(data)
                 except MachOError as exc:
-                    warnings.append(f"Unable to parse Mach-O {name}: {exc}")
+                    message = f"Unable to parse Mach-O {name}: {exc}"
+                    if name == main_executable_name:
+                        errors.append(message)
+                    else:
+                        warnings.append(message)
                     continue
+                if name == main_executable_name and not analysis.is_macho:
+                    errors.append(f"Main executable is not a Mach-O file: {name}")
                 if analysis.encrypted:
                     encrypted.append(name)
             if encrypted:
